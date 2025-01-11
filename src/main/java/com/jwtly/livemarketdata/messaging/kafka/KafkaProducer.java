@@ -1,13 +1,14 @@
 package com.jwtly.livemarketdata.messaging.kafka;
 
-import com.fasterxml.jackson.databind.ser.std.StringSerializer;
 import com.jwtly.livemarketdata.core.Price;
+import com.jwtly.livemarketdata.proto.PriceMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.header.internals.RecordHeader;
-import org.apache.kafka.shaded.com.google.protobuf.Message;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -33,7 +34,7 @@ public class KafkaProducer {
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cfg.getBootstrapServers());
         props.put(ProducerConfig.CLIENT_ID_CONFIG, cfg.getClientId());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         props.put(ProducerConfig.RETRIES_CONFIG, cfg.getMaxRetries());
         props.put(ProducerConfig.ACKS_CONFIG, cfg.getRequiredAcks());
         props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, cfg.getCompression());
@@ -46,11 +47,12 @@ public class KafkaProducer {
 
     public CompletableFuture<SendResult<String, byte[]>> sendMessage(
             String broker,
-            Price price,
-            Message protoMessage
+            Price price
     ) {
-        validateMessage(broker, price, protoMessage);
+        validateMessage(broker, price);
+
         var key = String.format("%s:%s", broker, price.instrument());
+        PriceMessage protoMessage = PriceProtoHandler.toProto(price);
         ProducerRecord<String, byte[]> record = new ProducerRecord<>(
                 topic,
                 null, // partition
@@ -76,17 +78,13 @@ public class KafkaProducer {
                 });
     }
 
-    private void validateMessage(String broker, Price price, Message protoMessage) {
+    private void validateMessage(String broker, Price price) {
         if (broker == null || broker.isBlank()) {
             throw new IllegalArgumentException("Broker cannot be null or empty");
         }
 
         if (price == null) {
             throw new IllegalArgumentException("Price cannot be null");
-        }
-
-        if (protoMessage == null) {
-            throw new IllegalArgumentException("Proto message cannot be null");
         }
     }
 }

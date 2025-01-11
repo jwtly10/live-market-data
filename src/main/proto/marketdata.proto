@@ -1,0 +1,16 @@
+syntax = "proto3";
+package marketdata.v1;
+
+option java_package = "com.jwtly.livemarketdata.proto";
+option java_outer_classname = "MarketDataProto";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+message PriceMessage {
+  string instrument = 1;
+  string bid = 2;
+  string ask = 3;
+  string volume = 4;
+  google.protobuf.Timestamp time = 5;
+}

@@ -8,7 +8,6 @@ import com.jwtly.livemarketdata.core.Price;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
@@ -59,9 +58,9 @@ public class OandaPriceStream extends RetryableStream<Price> {
             if (res.type().equals(Type.PRICE)) {
                 var price = new Price(
                         res.instrument(),
-                        BigDecimal.valueOf(Double.parseDouble(res.bids().getFirst().price().value())),
-                        BigDecimal.valueOf(Double.parseDouble(res.asks().getFirst().price().value())),
-                        BigDecimal.ZERO, // TODO: Confirm how OANDA handle volume
+                        Double.parseDouble(res.bids().getFirst().price().value()),
+                        Double.parseDouble(res.asks().getFirst().price().value()),
+                        0.0, // TODO: Confirm how OANDA handle volume
                         res.time()
                 );
                 callback.onData(price);

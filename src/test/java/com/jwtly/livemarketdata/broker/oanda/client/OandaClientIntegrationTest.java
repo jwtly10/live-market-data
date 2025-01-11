@@ -1,9 +1,8 @@
-package integration.com.jwtly.livemarketdata.broker.oanda.client;
+package com.jwtly.livemarketdata.broker.oanda.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.jwtly.livemarketdata.broker.common.Stream;
-import com.jwtly.livemarketdata.broker.oanda.client.OandaClient;
 import com.jwtly.livemarketdata.core.Price;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Assertions;

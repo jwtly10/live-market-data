@@ -1,4 +1,4 @@
-package integration.com.jwtly.livemarketdata.kafka;
+package com.jwtly.livemarketdata.kafka;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.jwtly.livemarketdata.core.Price;
@@ -9,19 +9,18 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.shaded.com.fasterxml.jackson.databind.deser.std.StringDeserializer;
-import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
@@ -37,7 +36,7 @@ public class KafkaProducerIntegrationTest {
     private static final String CLIENT_ID = "test-producer";
 
     @Container
-    public static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka"));
+    static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.4.0");
 
     private KafkaProducer producer;
     private KafkaConsumer<String, byte[]> consumer;
@@ -76,7 +75,7 @@ public class KafkaProducerIntegrationTest {
     public void testCanPublishMessage() throws InvalidProtocolBufferException, ExecutionException, InterruptedException, TimeoutException {
         var broker = "test-broker";
         var now = Instant.now();
-        var price = new Price("BTC-USD", BigDecimal.valueOf(10000), BigDecimal.valueOf(10001), BigDecimal.valueOf(10002), now);
+        var price = new Price("BTC-USD", 10000, 10001, 10002, now);
 
         producer.sendMessage(broker, price).get(5, TimeUnit.SECONDS);
 
@@ -97,14 +96,47 @@ public class KafkaProducerIntegrationTest {
 
         PriceMessage receivedMessage = PriceMessage.parseFrom(record.value());
         Assertions.assertEquals(price.instrument(), receivedMessage.getInstrument());
-        Assertions.assertEquals(price.ask(), BigDecimal.valueOf(Double.parseDouble(receivedMessage.getAsk())));
-        Assertions.assertEquals(price.bid(), BigDecimal.valueOf(Double.parseDouble(receivedMessage.getBid())));
-        Assertions.assertEquals(price.volume(), BigDecimal.valueOf(Double.parseDouble(receivedMessage.getVolume())));
+        Assertions.assertEquals(price.ask(), Double.parseDouble(receivedMessage.getAsk()));
+        Assertions.assertEquals(price.bid(), Double.parseDouble(receivedMessage.getBid()));
+        Assertions.assertEquals(price.volume(), Double.parseDouble(receivedMessage.getVolume()));
         Assertions.assertEquals(price.time().getEpochSecond(), receivedMessage.getTime().getSeconds());
 
         var headers = record.headers();
         Assertions.assertArrayEquals(broker.getBytes(), headers.lastHeader("broker").value());
         Assertions.assertArrayEquals(price.instrument().getBytes(), headers.lastHeader("instrument").value());
+    }
+
+    @Test
+    public void testCanPublishMultipleMessages() throws Exception {
+        var broker = "test-broker";
+        var now = Instant.now();
+        var prices = List.of(
+                new Price("BTC-USD", 10000, 10001, 10002, Instant.ofEpochSecond(now.getEpochSecond())),
+                new Price("ETH-USD", 20000, 20001, 20002, Instant.ofEpochSecond(now.plus(Duration.ofSeconds(1)).getEpochSecond())),
+                new Price("LTC-USD", 30000, 30001, 30002, Instant.ofEpochSecond(now.plus(Duration.ofSeconds(2)).getEpochSecond())
+                )
+        );
+
+        for (Price price : prices) {
+            producer.sendMessage(broker, price).get(5, TimeUnit.SECONDS);
+        }
+
+        var records = consumer.poll(Duration.ofSeconds(5));
+        Assertions.assertEquals(3, records.count());
+
+        var gotPrices = new ArrayList<Price>();
+        for (ConsumerRecord<String, byte[]> record : records) {
+            PriceMessage receivedMessage = PriceMessage.parseFrom(record.value());
+            gotPrices.add(new Price(
+                    receivedMessage.getInstrument(),
+                    Double.parseDouble(receivedMessage.getBid()),
+                    Double.parseDouble(receivedMessage.getAsk()),
+                    Double.parseDouble(receivedMessage.getVolume()),
+                    Instant.ofEpochSecond(receivedMessage.getTime().getSeconds())
+            ));
+        }
+
+        Assertions.assertEquals(prices, gotPrices);
     }
 
 }
