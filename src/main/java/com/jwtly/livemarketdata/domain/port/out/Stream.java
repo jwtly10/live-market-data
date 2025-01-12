@@ -41,6 +41,11 @@ public interface Stream<T> {
         void onError(Exception e);
 
         /**
+         * Called when some sign of life is received from the stream.
+         */
+        void onHeartbeat();
+
+        /**
          * Called when the stream is complete.
          */
         void onComplete();

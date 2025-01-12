@@ -62,8 +62,6 @@ public class KafkaPricePublisher {
         record.headers().add(new RecordHeader("broker", broker.getBytes()));
         record.headers().add(new RecordHeader("instrument", price.instrument().getBytes()));
 
-        log.debug("Publishing market data message: {}", protoMessage);
-
         return kafkaTemplate.send(record)
                 .thenApply(result -> {
                     RecordMetadata metadata = result.getRecordMetadata();

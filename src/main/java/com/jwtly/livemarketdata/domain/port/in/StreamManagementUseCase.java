@@ -1,5 +1,6 @@
 package com.jwtly.livemarketdata.domain.port.in;
 
+import com.jwtly.livemarketdata.domain.exception.stream.StreamCreationException;
 import com.jwtly.livemarketdata.domain.model.stream.CreateStreamCommand;
 import com.jwtly.livemarketdata.domain.model.stream.StreamId;
 import com.jwtly.livemarketdata.domain.model.stream.StreamStatus;
@@ -13,7 +14,7 @@ public interface StreamManagementUseCase {
      * @param command The command to create a stream.
      * @return The status of the created stream.
      */
-    StreamStatus createStream(CreateStreamCommand command);
+    StreamStatus createStream(CreateStreamCommand command) throws StreamCreationException;
 
     /**
      * Stop a stream.

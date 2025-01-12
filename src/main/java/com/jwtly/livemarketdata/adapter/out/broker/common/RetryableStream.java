@@ -2,6 +2,7 @@ package com.jwtly.livemarketdata.adapter.out.broker.common;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jwtly.livemarketdata.domain.exception.stream.StreamStartupException;
 import com.jwtly.livemarketdata.domain.port.out.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ public abstract class RetryableStream<T> implements Stream<T> {
     private static final int MAX_RETRIES = 10;
     private static final long INITIAL_BACKOFF_MS = 1000;
     private static final long MAX_BACKOFF_MS = 30000;
+    private volatile boolean isInitialConnection = true;
     protected final ObjectMapper objectMapper;
     protected final HttpClient client;
     protected final HttpRequest request;
@@ -102,8 +104,19 @@ public abstract class RetryableStream<T> implements Stream<T> {
 
         currentRequest = client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
                 .thenAccept(response -> {
+                    // We fail fast on initial connection and let the caller know
+                    if (isInitialConnection && response.statusCode() >= HttpStatus.MULTIPLE_CHOICES.value()) {
+                        log.debug("Initial connection failed with status code: {} for class: {}", response.statusCode(), streamClassName);
+                        isInitialConnection = false;
+                        var bodyString = new BufferedReader(new InputStreamReader(response.body())).lines().reduce("", String::concat);
+                        callback.onError(new StreamStartupException(String.format("Failed to establish initial connection. Status code: '%s' Body: '%s'", response.statusCode(), bodyString)));
+                        return;
+                    }
+
                     if (response.statusCode() >= HttpStatus.OK.value() || response.statusCode() < HttpStatus.MULTIPLE_CHOICES.value()) {
                         log.info("Stream connection established successfully for class: {}", streamClassName);
+                        isInitialConnection = false;
+                        callback.onHeartbeat();
                         retryCount = 0;
                     } else {
                         log.error("Stream connection failed with status code: {} for class: {}", response.statusCode(), streamClassName);

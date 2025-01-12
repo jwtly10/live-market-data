@@ -67,6 +67,11 @@ public class OandaClientIntegrationTest {
             }
 
             @Override
+            public void onHeartbeat() {
+                log.info("Heartbeat received");
+            }
+
+            @Override
             public void onComplete() {
                 latch.countDown();
             }

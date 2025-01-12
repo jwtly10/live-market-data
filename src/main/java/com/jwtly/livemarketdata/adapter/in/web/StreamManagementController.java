@@ -4,6 +4,7 @@ import com.jwtly.livemarketdata.adapter.in.web.dto.ApiError;
 import com.jwtly.livemarketdata.adapter.in.web.dto.StreamCreateRequest;
 import com.jwtly.livemarketdata.adapter.in.web.dto.StreamStatusResponse;
 import com.jwtly.livemarketdata.adapter.in.web.mapper.StreamDtoMapper;
+import com.jwtly.livemarketdata.domain.exception.stream.StreamCreationException;
 import com.jwtly.livemarketdata.domain.model.stream.StreamId;
 import com.jwtly.livemarketdata.domain.model.stream.StreamStatus;
 import com.jwtly.livemarketdata.domain.port.in.StreamManagementUseCase;
@@ -59,7 +60,7 @@ public class StreamManagementController {
             )
     })
     @PostMapping
-    public StreamStatusResponse createStream(@RequestBody StreamCreateRequest req) {
+    public StreamStatusResponse createStream(@RequestBody StreamCreateRequest req) throws StreamCreationException {
         StreamStatus status = streamManagementUseCase.createStream(mapper.toCommand(req));
         return mapper.toResponse(status);
     }
