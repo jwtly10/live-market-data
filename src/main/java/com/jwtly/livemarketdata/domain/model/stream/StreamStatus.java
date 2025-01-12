@@ -8,5 +8,7 @@ public record StreamStatus(
         StreamId streamId,
         Broker broker,
         List<String> instruments,
-        StreamState state) {
+        StreamState state,
+        List<StreamError> recentErrors
+) {
 }

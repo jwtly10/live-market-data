@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariables;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
@@ -56,12 +57,38 @@ public class OandaPriceStreamIntegrationTest {
                 .expectSubscription()
                 .thenConsumeWhile(price -> {
                     log.info("Received price: {}", price);
-                    priceCount.incrementAndGet();
-                    return priceCount.get() <= 5;
+                    return priceCount.incrementAndGet() <= 5;
                 })
-                .expectComplete()
+                .thenCancel()
                 .verify(Duration.ofSeconds(15));
 
-        Assertions.assertTrue(priceCount.get() > 0, "Expected to receive at least one price");
+        Assertions.assertEquals(6, priceCount.get(), "Expected 6 prices");
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.SECONDS)
+    void testDoesNotRetryUnauthorisedRequest() {
+        String invalidKey = "invalid-key";
+        List<String> instruments = List.of("BTC_USD");
+
+        var flux = priceStream.streamPrices(invalidKey, accountId, instruments);
+
+        StepVerifier.create(flux)
+                .expectSubscription()
+                .expectError(WebClientResponseException.Unauthorized.class)  // Expect 401
+                .verify(Duration.ofSeconds(15));
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.SECONDS)
+    void testDoesNotRetryBadRequest() {
+        List<String> instruments = List.of("INVALID_PAIR");
+
+        var flux = priceStream.streamPrices(apiKey, accountId, instruments);
+
+        StepVerifier.create(flux)
+                .expectSubscription()
+                .expectError(WebClientResponseException.BadRequest.class)  // Expect 400
+                .verify(Duration.ofSeconds(15));
     }
 }

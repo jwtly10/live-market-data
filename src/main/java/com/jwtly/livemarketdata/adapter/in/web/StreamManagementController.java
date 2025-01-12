@@ -34,7 +34,9 @@ public class StreamManagementController {
 
     @Operation(
             summary = "Create a new stream",
-            description = "Creates a new market data stream based on the provided configuration"
+            description = " Asynchronously creates a new market data stream based on the provided configuration. " +
+                    "Returns a stream in state 'PENDING' until the stream is successfully created. " +
+                    "Callers should check the stream status to determine when the stream is running. "
     )
     @ApiResponses(value = {
             @ApiResponse(

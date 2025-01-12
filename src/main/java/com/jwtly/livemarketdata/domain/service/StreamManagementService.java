@@ -12,16 +12,15 @@ import com.jwtly.livemarketdata.domain.port.in.StreamManagementUseCase;
 import com.jwtly.livemarketdata.domain.port.out.MarketDataPort;
 import com.jwtly.livemarketdata.domain.port.out.MarketDataPublisherPort;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public class StreamManagementService implements StreamManagementUseCase {
@@ -36,49 +35,50 @@ public class StreamManagementService implements StreamManagementUseCase {
 
     @Override
     public Mono<StreamStatus> createStream(CreateStreamCommand command) {
-        MarketDataPort adapter = validateAndGetAdapter(command.broker());
         StreamId streamId = StreamId.generate();
+        MarketDataPort adapter = validateAndGetAdapter(command.broker());
 
-        return Mono.defer(() -> {
-            AtomicBoolean isHealthy = new AtomicBoolean(false);
+        StreamHandle handle = new StreamHandle(streamId, command.broker(), command.instruments());
 
-            Flux<Price> priceStream = adapter.createPriceStream(streamId.toString(), command.instruments())
-                    .doOnNext(price -> {
-                        isHealthy.set(true);
-                        publisher.publishPrice(command.broker().name(), price)
-                                .whenComplete((result, error) -> {
-                                    if (error != null) {
-                                        log.error("Failed to publish price", error);
-                                    }
-                                });
-                    })
-                    .doOnError(e -> isHealthy.set(false))
-                    .retry(10)
-                    .subscribeOn(Schedulers.boundedElastic());
-
-            return Mono.just(priceStream.subscribe())
-                    .map(subscription -> {
-                        StreamHandle handle = new StreamHandle(
-                                streamId,
+        Flux<Price> priceStream = adapter.createPriceStream(streamId.toString(), command.instruments())
+                .flatMap(price -> publisher.publishPrice(command.broker().name(), price)
+                        .doOnSuccess(__ -> handle.markRunning())
+                        .doOnError(error -> {
+                            log.error("Failed to publish price for broker {}",
+                                    command.broker(),
+                                    error
+                            );
+                            handle.recordError(error, "price_publish");
+                        })
+                        .thenReturn(price)
+                )
+                .doOnError(error -> {
+                    if (error instanceof WebClientResponseException wcre) {
+                        log.error("Stream error from broker {}: {} {}",
                                 command.broker(),
-                                command.instruments(),
-                                subscription,
-                                isHealthy
+                                wcre.getStatusCode(),
+                                wcre.getMessage()
                         );
-                        activeStreams.put(streamId, handle);
-                        return handle.toStatus();
-                    })
-                    .timeout(Duration.ofSeconds(10))
-                    .doOnError(e -> {
-                        log.error("Failed to start stream", e);
-                        Optional.ofNullable(activeStreams.remove(streamId))
-                                .ifPresent(handle -> handle.subscription().dispose());
-                    });
-        });
+                    } else {
+                        log.error("Unexpected stream error from broker {}",
+                                command.broker(),
+                                error
+                        );
+                    }
+                    handle.recordError(error, "stream_error");
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .share();
+
+        handle.setSubscription(priceStream.subscribe());
+        activeStreams.put(streamId, handle);
+
+        return Mono.just(handle.toStatus());
     }
 
     @Override
     public Mono<Void> stopStream(StreamId streamId) {
+        log.debug("Stopping stream: {}", streamId);
         return Mono.fromRunnable(() -> {
             StreamHandle handle = activeStreams.remove(streamId);
             if (handle == null) {
@@ -90,12 +90,14 @@ public class StreamManagementService implements StreamManagementUseCase {
 
     @Override
     public Flux<StreamStatus> getActiveStreams() {
+        log.debug("Retrieving active streams");
         return Flux.fromIterable(activeStreams.values())
                 .map(StreamHandle::toStatus);
     }
 
     @Override
     public Mono<StreamStatus> getStreamStatus(StreamId streamId) {
+        log.debug("Retrieving stream status: {}", streamId);
         return Mono.justOrEmpty(activeStreams.get(streamId))
                 .map(StreamHandle::toStatus)
                 .switchIfEmpty(Mono.error(new StreamNotFoundException("Stream not found: " + streamId)));

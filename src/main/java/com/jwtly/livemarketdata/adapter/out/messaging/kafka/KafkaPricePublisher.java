@@ -5,31 +5,31 @@ import com.jwtly.livemarketdata.proto.PriceMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.kafka.core.DefaultKafkaProducerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
+import reactor.core.publisher.Mono;
+import reactor.kafka.sender.KafkaSender;
+import reactor.kafka.sender.SenderOptions;
+import reactor.kafka.sender.SenderRecord;
+import reactor.kafka.sender.SenderResult;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 public class KafkaPricePublisher {
-    private final KafkaTemplate<String, byte[]> kafkaTemplate;
+    private final KafkaSender<String, byte[]> sender;
     private final String topic;
 
     public KafkaPricePublisher(KafkaConfig cfg) {
-        this.kafkaTemplate = initKafkaTemplate(cfg);
+        this.sender = initKafkaSender(cfg);
         this.topic = cfg.getTopic();
     }
 
-    private KafkaTemplate<String, byte[]> initKafkaTemplate(KafkaConfig cfg) {
+    private KafkaSender<String, byte[]> initKafkaSender(KafkaConfig cfg) {
         Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cfg.getBootstrapServers());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, String.join(",", cfg.getBootstrapServers()));
         props.put(ProducerConfig.CLIENT_ID_CONFIG, cfg.getClientId());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
@@ -37,41 +37,42 @@ public class KafkaPricePublisher {
         props.put(ProducerConfig.ACKS_CONFIG, cfg.getRequiredAcks());
         props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, cfg.getCompression());
 
-        DefaultKafkaProducerFactory<String, byte[]> factory =
-                new DefaultKafkaProducerFactory<>(props);
-        return new KafkaTemplate<>(factory);
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 3000);
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
+
+        return KafkaSender.create(SenderOptions.<String, byte[]>create(props)
+                .stopOnError(true));
     }
 
-
-    public CompletableFuture<SendResult<String, byte[]>> sendMessage(
-            String broker,
-            Price price
-    ) {
+    public Mono<SenderResult<Void>> sendMessage(String broker, Price price) {
         validateMessage(broker, price);
 
         var key = String.format("%s:%s", broker, price.instrument());
         PriceMessage protoMessage = PriceProtoHandler.toProto(price);
-        ProducerRecord<String, byte[]> record = new ProducerRecord<>(
+
+        ProducerRecord<String, byte[]> producerRecord = new ProducerRecord<>(
                 topic,
                 null, // partition
                 key,
                 protoMessage.toByteArray()
         );
 
+        producerRecord.headers().add(new RecordHeader("broker", broker.getBytes()));
+        producerRecord.headers().add(new RecordHeader("instrument", price.instrument().getBytes()));
 
-        record.headers().add(new RecordHeader("broker", broker.getBytes()));
-        record.headers().add(new RecordHeader("instrument", price.instrument().getBytes()));
+        log.debug("Publishing message - broker: {}, instrument: {}", broker, price.instrument());
 
-        return kafkaTemplate.send(record)
-                .thenApply(result -> {
-                    RecordMetadata metadata = result.getRecordMetadata();
-                    log.info("Message published - partition: {}, offset: {}, broker: {}, instrument: {}",
-                            metadata.partition(),
-                            metadata.offset(),
-                            broker,
-                            price.instrument());
-                    return result;
-                });
+        return sender.send(Mono.just(SenderRecord.<String, byte[], Void>create(producerRecord, null)))
+                .next()
+                .doOnNext(result -> log.debug("Message published - partition: {}, offset: {}, broker: {}, instrument: {}",
+                        result.recordMetadata().partition(),
+                        result.recordMetadata().offset(),
+                        broker,
+                        price.instrument()))
+                .doOnError(error ->
+                        log.error("Failed to publish message to Kafka - broker: {}, instrument: {}, error: {}",
+                                broker, price.instrument(), error.getMessage())
+                );
     }
 
     private void validateMessage(String broker, Price price) {
@@ -82,5 +83,9 @@ public class KafkaPricePublisher {
         if (price == null) {
             throw new IllegalArgumentException("Price cannot be null");
         }
+    }
+
+    public void close() {
+        sender.close();
     }
 }

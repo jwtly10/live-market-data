@@ -2,6 +2,7 @@ package com.jwtly.livemarketdata.config.messaging;
 
 import com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaConfig;
 import com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaMarketDataPublisher;
+import com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaPricePublisher;
 import com.jwtly.livemarketdata.domain.port.out.MarketDataPublisherPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -33,7 +34,12 @@ public class KafkaConfiguration {
     }
 
     @Bean
-    public MarketDataPublisherPort marketDataPublisher(KafkaConfig config) {
-        return new KafkaMarketDataPublisher(config);
+    public KafkaPricePublisher kafkaPricePublisher(KafkaConfig config) {
+        return new KafkaPricePublisher(config);
+    }
+
+    @Bean
+    public MarketDataPublisherPort marketDataPublisher(KafkaPricePublisher publisher) {
+        return new KafkaMarketDataPublisher(publisher);
     }
 }

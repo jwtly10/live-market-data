@@ -1,31 +1,22 @@
 package com.jwtly.livemarketdata.adapter.out.messaging.kafka;
 
 import com.jwtly.livemarketdata.domain.model.Price;
-import com.jwtly.livemarketdata.domain.model.PublishResult;
 import com.jwtly.livemarketdata.domain.port.out.MarketDataPublisherPort;
+import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Mono;
 
-import java.util.concurrent.CompletableFuture;
-
+@Slf4j
 public class KafkaMarketDataPublisher implements MarketDataPublisherPort {
     private final KafkaPricePublisher publisher;
 
-    public KafkaMarketDataPublisher(KafkaConfig config) {
-        this.publisher = new KafkaPricePublisher(config);
+    public KafkaMarketDataPublisher(KafkaPricePublisher publisher) {
+        this.publisher = publisher;
     }
 
     @Override
-    public CompletableFuture<PublishResult> publishPrice(String broker, Price price) {
+    public Mono<Void> publishPrice(String broker, Price price) {
         return publisher.sendMessage(broker, price)
-                .thenApply(result -> new PublishResult(
-                        result.getRecordMetadata().offset() + "",
-                        true,
-                        null
-                ))
-                .exceptionally(error -> new PublishResult(
-                        null,
-                        false,
-                        error.getMessage()
-                ))
-                ;
+                .then();
     }
 }
+

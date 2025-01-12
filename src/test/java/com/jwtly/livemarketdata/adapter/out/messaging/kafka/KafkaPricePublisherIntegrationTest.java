@@ -4,8 +4,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.jwtly.livemarketdata.domain.model.Price;
 import com.jwtly.livemarketdata.proto.PriceMessage;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
@@ -15,29 +13,27 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
+import reactor.core.publisher.Flux;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOptions;
+import reactor.test.StepVerifier;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Testcontainers
 public class KafkaPricePublisherIntegrationTest {
     private static final String TOPIC = "test-market-data";
     private static final String CLIENT_ID = "test-producer";
+    private static final String GROUP_ID = "test-group";
 
     @Container
     static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.4.0");
 
     private KafkaPricePublisher producer;
-    private KafkaConsumer<String, byte[]> consumer;
+    private KafkaReceiver<String, byte[]> receiver;
 
     @BeforeEach
     void setUp() {
@@ -54,87 +50,84 @@ public class KafkaPricePublisherIntegrationTest {
 
         Properties consumerProps = new Properties();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test-group");
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
 
-        consumer = new KafkaConsumer<>(consumerProps);
-        consumer.subscribe(Collections.singletonList(TOPIC));
+        ReceiverOptions<String, byte[]> receiverOptions = ReceiverOptions.<String, byte[]>create(consumerProps)
+                .subscription(Collections.singletonList(TOPIC));
+
+        receiver = KafkaReceiver.create(receiverOptions);
     }
 
     @AfterEach
     void tearDown() {
-        if (consumer != null) {
-            consumer.close();
-        }
+        producer.close();
     }
 
     @Test
-    public void testCanPublishMessage() throws InvalidProtocolBufferException, ExecutionException, InterruptedException, TimeoutException {
+    void testCanPublishMessage() {
         var broker = "test-broker";
         var now = Instant.now();
         var price = new Price("BTC-USD", 10000, 10001, 10002, now);
 
-        producer.sendMessage(broker, price).get(5, TimeUnit.SECONDS);
+        StepVerifier.create(producer.sendMessage(broker, price)
+                        .thenMany(receiver.receive()
+                                .take(1)
+                                .map(record -> {
+                                    try {
+                                        var receivedMessage = PriceMessage.parseFrom(record.value());
+                                        Assertions.assertEquals(String.format("%s:%s", broker, price.instrument()), record.key());
+                                        Assertions.assertEquals(price.instrument(), receivedMessage.getInstrument());
+                                        Assertions.assertEquals(price.ask(), Double.parseDouble(receivedMessage.getAsk()));
+                                        Assertions.assertEquals(price.bid(), Double.parseDouble(receivedMessage.getBid()));
+                                        Assertions.assertEquals(price.volume(), Double.parseDouble(receivedMessage.getVolume()));
+                                        Assertions.assertEquals(price.time().getEpochSecond(), receivedMessage.getTime().getSeconds());
 
-        ConsumerRecord<String, byte[]> record = null;
-        int maxAttempts = 5;
-        int attempt = 0;
-
-        while (record == null && attempt < maxAttempts) {
-            var records = consumer.poll(Duration.ofSeconds(1));
-            if (!records.isEmpty()) {
-                record = records.iterator().next();
-            }
-            attempt++;
-        }
-
-        assertNotNull(record, "Message not received within timeout");
-        Assertions.assertEquals(String.format("%s:%s", broker, price.instrument()), record.key());
-
-        PriceMessage receivedMessage = PriceMessage.parseFrom(record.value());
-        Assertions.assertEquals(price.instrument(), receivedMessage.getInstrument());
-        Assertions.assertEquals(price.ask(), Double.parseDouble(receivedMessage.getAsk()));
-        Assertions.assertEquals(price.bid(), Double.parseDouble(receivedMessage.getBid()));
-        Assertions.assertEquals(price.volume(), Double.parseDouble(receivedMessage.getVolume()));
-        Assertions.assertEquals(price.time().getEpochSecond(), receivedMessage.getTime().getSeconds());
-
-        var headers = record.headers();
-        Assertions.assertArrayEquals(broker.getBytes(), headers.lastHeader("broker").value());
-        Assertions.assertArrayEquals(price.instrument().getBytes(), headers.lastHeader("instrument").value());
+                                        var headers = record.headers();
+                                        Assertions.assertArrayEquals(broker.getBytes(), headers.lastHeader("broker").value());
+                                        Assertions.assertArrayEquals(price.instrument().getBytes(), headers.lastHeader("instrument").value());
+                                        return true;
+                                    } catch (InvalidProtocolBufferException e) {
+                                        return false;
+                                    }
+                                })))
+                .expectNext(true)
+                .verifyComplete();
     }
 
     @Test
-    public void testCanPublishMultipleMessages() throws Exception {
+    void testCanPublishMultipleMessages() {
         var broker = "test-broker";
-        var now = Instant.now();
+        var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         var prices = List.of(
-                new Price("BTC-USD", 10000, 10001, 10002, Instant.ofEpochSecond(now.getEpochSecond())),
-                new Price("ETH-USD", 20000, 20001, 20002, Instant.ofEpochSecond(now.plus(Duration.ofSeconds(1)).getEpochSecond())),
-                new Price("LTC-USD", 30000, 30001, 30002, Instant.ofEpochSecond(now.plus(Duration.ofSeconds(2)).getEpochSecond())
-                )
+                new Price("BTC-USD", 10000, 10001, 10002, now),
+                new Price("ETH-USD", 20000, 20001, 20002, now.plusSeconds(1)),
+                new Price("LTC-USD", 30000, 30001, 30002, now.plusSeconds(2))
         );
 
-        for (Price price : prices) {
-            producer.sendMessage(broker, price).get(5, TimeUnit.SECONDS);
-        }
-
-        var records = consumer.poll(Duration.ofSeconds(5));
-        Assertions.assertEquals(3, records.count());
-
-        var gotPrices = new ArrayList<Price>();
-        for (ConsumerRecord<String, byte[]> record : records) {
-            PriceMessage receivedMessage = PriceMessage.parseFrom(record.value());
-            gotPrices.add(new Price(
-                    receivedMessage.getInstrument(),
-                    Double.parseDouble(receivedMessage.getBid()),
-                    Double.parseDouble(receivedMessage.getAsk()),
-                    Double.parseDouble(receivedMessage.getVolume()),
-                    Instant.ofEpochSecond(receivedMessage.getTime().getSeconds())
-            ));
-        }
-
-        Assertions.assertEquals(prices, gotPrices);
+        StepVerifier.create(Flux.fromIterable(prices)
+                        .flatMap(price -> producer.sendMessage(broker, price))
+                        .thenMany(receiver.receive()
+                                .take(3)
+                                .map(record -> {
+                                    try {
+                                        var receivedMessage = PriceMessage.parseFrom(record.value());
+                                        return new Price(
+                                                receivedMessage.getInstrument(),
+                                                Double.parseDouble(receivedMessage.getBid()),
+                                                Double.parseDouble(receivedMessage.getAsk()),
+                                                Double.parseDouble(receivedMessage.getVolume()),
+                                                Instant.ofEpochSecond(receivedMessage.getTime().getSeconds())
+                                        );
+                                    } catch (InvalidProtocolBufferException e) {
+                                        return null;
+                                    }
+                                })
+                                .collectList())
+                        .doOnNext(receivedPrices -> Assertions.assertEquals(prices, receivedPrices)))
+                .expectNextCount(1)
+                .verifyComplete();
     }
 }

@@ -13,7 +13,8 @@ public class StreamDtoMapper {
                 status.streamId().value(),
                 status.broker(),
                 status.state(),
-                status.instruments()
+                status.instruments(),
+                status.recentErrors()
         );
     }
 

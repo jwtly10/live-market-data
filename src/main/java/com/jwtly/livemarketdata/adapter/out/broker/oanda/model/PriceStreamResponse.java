@@ -20,8 +20,8 @@ public record PriceStreamResponse(
         @JsonProperty("tradeable") Boolean tradeable,
         @JsonProperty("bids") List<PriceBucket> bids,
         @JsonProperty("asks") List<PriceBucket> asks,
-        @JsonProperty("closeoutBid") PriceValue closeoutBid,
-        @JsonProperty("closeoutAsk") PriceValue closeoutAsk
+        @JsonProperty("closeoutBid") String closeoutBid,
+        @JsonProperty("closeoutAsk") String closeoutAsk
 ) {
 }
 
