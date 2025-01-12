@@ -4,7 +4,7 @@ public enum StreamState {
     CREATED,
     STARTING,
     RUNNING,
-    ACTIVE,
     STOPPED,
-    COMPLETED
+    COMPLETED,
+    ERROR
 }
