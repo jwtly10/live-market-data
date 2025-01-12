@@ -21,12 +21,10 @@ import java.util.concurrent.CompletableFuture;
 public class KafkaPricePublisher {
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
     private final String topic;
-    private final String clientId;
 
     public KafkaPricePublisher(KafkaConfig cfg) {
         this.kafkaTemplate = initKafkaTemplate(cfg);
         this.topic = cfg.getTopic();
-        this.clientId = cfg.getClientId();
     }
 
     private KafkaTemplate<String, byte[]> initKafkaTemplate(KafkaConfig cfg) {

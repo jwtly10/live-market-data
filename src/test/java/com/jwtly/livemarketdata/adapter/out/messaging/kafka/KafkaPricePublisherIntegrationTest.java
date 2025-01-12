@@ -41,13 +41,14 @@ public class KafkaPricePublisherIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        KafkaConfig cfg = new KafkaConfig();
-        cfg.setBootstrapServers(List.of(kafka.getBootstrapServers()));
-        cfg.setTopic(TOPIC);
-        cfg.setClientId(CLIENT_ID);
-        cfg.setMaxRetries(3);
-        cfg.setRequiredAcks("all");
-        cfg.setCompression("none");
+        KafkaConfig cfg = KafkaConfig.builder()
+                .bootstrapServers(List.of(kafka.getBootstrapServers()))
+                .topic(TOPIC)
+                .clientId(CLIENT_ID)
+                .maxRetries(3)
+                .requiredAcks("all")
+                .compression("none")
+                .build();
 
         producer = new KafkaPricePublisher(cfg);
 

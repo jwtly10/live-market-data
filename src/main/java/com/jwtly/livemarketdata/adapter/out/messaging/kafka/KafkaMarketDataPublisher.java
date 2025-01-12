@@ -3,11 +3,9 @@ package com.jwtly.livemarketdata.adapter.out.messaging.kafka;
 import com.jwtly.livemarketdata.domain.model.Price;
 import com.jwtly.livemarketdata.domain.model.PublishResult;
 import com.jwtly.livemarketdata.domain.port.out.MarketDataPublisherPort;
-import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
 
-@Component
 public class KafkaMarketDataPublisher implements MarketDataPublisherPort {
     private final KafkaPricePublisher publisher;
 

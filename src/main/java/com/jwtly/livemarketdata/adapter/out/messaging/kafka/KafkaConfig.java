@@ -1,14 +1,12 @@
 package com.jwtly.livemarketdata.adapter.out.messaging.kafka;
 
-import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import lombok.Builder;
+import lombok.Getter;
 
 import java.util.List;
 
-@Configuration
-@ConfigurationProperties(prefix = "kafka")
-@Data
+@Builder
+@Getter
 public class KafkaConfig {
     private List<String> bootstrapServers;
     private String topic;

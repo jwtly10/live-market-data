@@ -62,7 +62,7 @@ public class OandaClientIntegrationTest {
 
             @Override
             public void onError(Exception e) {
-                e.printStackTrace();
+                log.error("Error in price stream", e);
                 latch.countDown();
             }
 
@@ -81,5 +81,10 @@ public class OandaClientIntegrationTest {
         }
 
         Assertions.assertTrue(count.get() > 0, "Expected to receive at least one price");
+    }
+
+    @Test
+    void testCanBeStoppedGracefully() throws Exception {
+        throw new RuntimeException("Not implemented yet");
     }
 }
