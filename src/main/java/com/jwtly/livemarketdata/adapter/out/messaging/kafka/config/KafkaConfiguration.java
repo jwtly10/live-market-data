@@ -1,4 +1,4 @@
-package com.jwtly.livemarketdata.config.messaging;
+package com.jwtly.livemarketdata.adapter.out.messaging.kafka.config;
 
 import com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaConfig;
 import com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaMarketDataPublisher;
@@ -13,6 +13,7 @@ import java.util.List;
 
 @Configuration
 public class KafkaConfiguration {
+
     @Bean
     public KafkaConfig kafkaConfig(
             @Value("${kafka.bootstrap-servers}") String bootstrapServersString,
@@ -34,7 +35,7 @@ public class KafkaConfiguration {
     }
 
     @Bean
-    public KafkaPricePublisher kafkaPricePublisher(KafkaConfig config) {
+    public KafkaPricePublisher kafkaPricePublisher(com.jwtly.livemarketdata.adapter.out.messaging.kafka.KafkaConfig config) {
         return new KafkaPricePublisher(config);
     }
 
@@ -42,4 +43,5 @@ public class KafkaConfiguration {
     public MarketDataPublisherPort marketDataPublisher(KafkaPricePublisher publisher) {
         return new KafkaMarketDataPublisher(publisher);
     }
+
 }

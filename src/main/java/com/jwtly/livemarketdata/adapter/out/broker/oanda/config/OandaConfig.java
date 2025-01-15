@@ -1,4 +1,4 @@
-package com.jwtly.livemarketdata.config.broker;
+package com.jwtly.livemarketdata.adapter.out.broker.oanda.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -12,8 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
-public class OandaConfiguration {
-
+public class OandaConfig {
     @Bean
     public WebClient oandaWebClient(@Value("${oanda.stream-url}") String streamUrl) {
         return WebClient.builder()
